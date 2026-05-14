@@ -1,0 +1,33 @@
+# Secrets
+.env
+.env.local
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE / tooling
+.idea/
+.vscode/
+.claude/
+*.swp
+.DS_Store
+
+# Local data dumps
+*.json.bak
+data/
+.cache/
