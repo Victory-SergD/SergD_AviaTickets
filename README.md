@@ -261,7 +261,7 @@ SergD_AviaTickets/
 **Сергей Дышкант** — IT-предприниматель, основатель Victory Lab, частый путешественник.
 
 - 🐙 GitHub: [@Victory-SergD](https://github.com/Victory-SergD)
-- 📱 Telegram: <!-- TODO: вставить ссылку на канал --> [@your_channel](https://t.me/YOUR_CHANNEL)
+- 📱 Telegram-канал: [@SergD_leads](https://t.me/SergD_leads)
 
 Если репо был полезен — ⭐ звезда и репост в Telegram-канал автору в радость.
 
