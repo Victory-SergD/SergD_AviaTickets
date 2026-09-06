@@ -28,6 +28,7 @@
 |---|---|---|
 | [travelpayouts_search.py](travelpayouts_search.py) | Поиск по направлению / стоповер через хабы | Базовый поисковик с реальными ценами |
 | [weekend_search.py](weekend_search.py) | 4 режима: `route`, `discover`, `abroad`, `longtrip` | Закрывает 90% реальных сценариев путешественника |
+| [PLAYBOOK.md](PLAYBOOK.md) | Handoff-документ: как повторить весь путь с нуля — токен, три слоя API, запросы, ограничения, методика | Отдать любому разработчику, чтобы он воспроизвёл поиск за час |
 | [graphql_search.py](graphql_search.py) | GraphQL: `search` (полные маршруты с номерами рейсов) и `stopover` (связки через хабы с проверкой стыковок по времени) | Десятки предложений на дату вместо одного, самопересадки, стоповер в новой стране |
 | [duffel_search.py](duffel_search.py) | Альтернативный поисковик через Duffel API | Reference. Подходит для тех, у кого есть зарубежное юрлицо |
 
@@ -302,6 +303,7 @@ SergD_AviaTickets/
 ├── travelpayouts_search.py    # одиночный поиск + stopover hunter
 ├── weekend_search.py          # 4 режима: route, discover, abroad, longtrip
 ├── graphql_search.py          # GraphQL: search (полные маршруты) + stopover (связки с проверкой стыковок)
+├── PLAYBOOK.md                # handoff: регистрация, устройство API, рабочие запросы, тупики, методика
 ├── duffel_search.py           # альтернативная реализация на Duffel API
 ├── requirements.txt           # httpx — единственная зависимость
 ├── .env.example               # шаблон конфига токенов
