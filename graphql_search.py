@@ -20,6 +20,10 @@ Two modes:
   # same, but as a fast transit (2.5..8h connection) — finds self-transfer routes REST never shows
   python graphql_search.py stopover --from SVX --to CGK --dates 2026-09-10 --min-stop 2.5 --max-stop 8
 
+  # only stopovers you can actually spend in the city: 8+ hours of the layover in local daytime
+  python graphql_search.py stopover --from SVX --to CGK --dates 2026-09-10 \
+      --min-stop 11 --max-stop 30 --min-daylight 8 --sort duration
+
 Reads TRAVELPAYOUTS_TOKEN from env. Prices are Aviasales cache (found within ~48h), not a live search.
 """
 from __future__ import annotations
@@ -105,6 +109,26 @@ def fmt_hours(hours: float) -> str:
 def parse_dt(s: str) -> datetime:
     """Aviasales returns local time with offset, e.g. 2026-09-10T15:20:00+05:00."""
     return datetime.fromisoformat(s)
+
+
+def daylight_hours(start: datetime, end: datetime, *, day_from: int = 9, day_to: int = 22) -> float:
+    """Hours of [start, end) that fall inside local daytime.
+
+    A 14h layover arriving 19:30 and departing 09:20 is a hotel night, not a day in the city;
+    the same 14h arriving 06:40 is a full day out. Timestamps carry the hub's own offset,
+    so comparing their naive clock time against day_from/day_to is already local time.
+    """
+    total = 0.0
+    cur = start
+    while cur < end:
+        midnight = (cur + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        chunk_end = min(end, midnight)
+        lo = max(cur, cur.replace(hour=day_from, minute=0, second=0, microsecond=0))
+        hi = min(chunk_end, cur.replace(hour=day_to, minute=0, second=0, microsecond=0))
+        if hi > lo:
+            total += (hi - lo).total_seconds() / 3600
+        cur = chunk_end
+    return total
 
 
 @dataclass
@@ -365,11 +389,17 @@ class Combo:
     def airport_change(self) -> bool:
         return self.leg1.legs[-1].destination != self.leg2.legs[0].origin
 
+    @property
+    def daylight(self) -> float:
+        """How much of the layover is actually usable for seeing the city."""
+        return daylight_hours(self.leg1.arrival_at, self.leg2.departure_at)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "hub": self.hub, "hub_name": self.hub_name, "country": self.country,
             "price": round(self.price, 2), "elapsed_hours": round(self.elapsed_hours, 2),
-            "stop_hours": round(self.stop_hours, 2), "airport_change": self.airport_change,
+            "stop_hours": round(self.stop_hours, 2), "daylight_hours": round(self.daylight, 2),
+            "airport_change": self.airport_change,
             "leg1": self.leg1.to_dict(), "leg2": self.leg2.to_dict(),
         }
 
@@ -385,7 +415,8 @@ def leg2_date_range(dates: list[str], max_stop_hours: float) -> tuple[str, str]:
 def run_stopover(
     token: str, origin: str, dest: str, dates: list[str], hubs: list[str], *,
     min_stop: float, max_stop: float, min_connect_airport_change: float,
-    max_price: float | None, max_hours: float | None, exclude_countries: set[str], sort: str,
+    max_price: float | None, max_hours: float | None, min_daylight: float | None,
+    exclude_countries: set[str], sort: str,
     currency: str, market: str, workers: int = 1,
 ) -> list[Combo]:
     dates2 = leg2_date_range(dates, max_stop)
@@ -423,6 +454,8 @@ def run_stopover(
                     combo = Combo(hub, name, country, a, b, gap)
                     if max_hours is not None and combo.elapsed_hours > max_hours:
                         continue
+                    if min_daylight is not None and combo.daylight < min_daylight:
+                        continue
                     combos.append(combo)
     for e in errors:
         print(f"  ! {e}", file=sys.stderr)
@@ -436,6 +469,8 @@ def run_stopover(
     combos = list(uniq.values())
     if sort == "duration":
         combos.sort(key=lambda c: (c.elapsed_hours, c.price))
+    elif sort == "daylight":
+        combos.sort(key=lambda c: (-c.daylight, c.elapsed_hours, c.price))
     else:
         combos.sort(key=lambda c: (c.price, c.elapsed_hours))
     return combos
@@ -445,12 +480,13 @@ def print_combos(combos: list[Combo], top: int, *, show_links: bool) -> None:
     if not combos:
         print("No feasible combinations found.")
         return
-    print(f"\n{'#':<3} {'Price':>9} {'Total':>8} {'Stop':>8} {'Hub':<22} Leg 1  ||  Leg 2")
-    print("-" * 150)
+    print(f"\n{'#':<3} {'Price':>9} {'Total':>8} {'Stop':>8} {'Day':>7} {'Hub':<22} Leg 1  ||  Leg 2")
+    print("-" * 158)
     for i, c in enumerate(combos[:top], 1):
         chg = " ✈→✈ смена аэропорта" if c.airport_change else ""
         print(
             f"{i:<3} {c.price:>6.0f} {c.leg1.currency:<2} {fmt_hours(c.elapsed_hours):>8} {fmt_hours(c.stop_hours):>8} "
+            f"{fmt_hours(c.daylight):>7} "
             f"{(c.hub_name + ' ' + c.country)[:22]:<22} "
             f"${c.leg1.price:.0f} {c.leg1.departure_at.strftime('%d.%m %H:%M')}→{c.leg1.arrival_at.strftime('%d.%m %H:%M')} "
             f"{c.leg1.route} {c.leg1.flights}  ||  "
@@ -501,9 +537,11 @@ def main() -> int:
                     help="Min hours if leg2 departs from a different airport than leg1 arrives (e.g. DWC->DXB)")
     st.add_argument("--max-price", type=float, help="Budget for both legs")
     st.add_argument("--max-hours", type=float, help="Drop combos longer than N hours door-to-door")
+    st.add_argument("--min-daylight", type=float,
+                    help="Require N hours of the layover to fall in local 09:00-22:00 — a long night layover is a hotel, not a city")
     st.add_argument("--workers", type=int, default=1, help="Parallel hub queries (GraphQL rate limit is tight; 1-2)")
     st.add_argument("--exclude-countries", nargs="*", default=[], help="ISO codes of hub countries to skip")
-    st.add_argument("--sort", choices=["price", "duration"], default="price")
+    st.add_argument("--sort", choices=["price", "duration", "daylight"], default="price")
     st.add_argument("--top", type=int, default=25)
     st.add_argument("--currency", default="usd")
     st.add_argument("--market", default="ru")
@@ -536,7 +574,7 @@ def main() -> int:
             token, args.origin.upper(), args.dest.upper(), dates, hubs,
             min_stop=args.min_stop, max_stop=args.max_stop,
             min_connect_airport_change=args.min_connect_airport_change,
-            max_price=args.max_price, max_hours=args.max_hours,
+            max_price=args.max_price, max_hours=args.max_hours, min_daylight=args.min_daylight,
             exclude_countries={c.upper() for c in args.exclude_countries},
             sort=args.sort, currency=args.currency, market=args.market, workers=max(1, args.workers),
         )
